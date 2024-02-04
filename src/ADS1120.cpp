@@ -1,6 +1,6 @@
 #include "ADS1120.h"
 #include <Arduino.h>
-
+#include <avr/sleep.h>
 
 ADS1120::ADS1120() {
 }
@@ -60,75 +60,81 @@ bool ADS1120::isDataReady() {
   return true;
 }
 
-uint16_t ADS1120::readADC() {
-  byte * data = readADC_SingleArray();
-  return convertToValue(data);
+
+uint16_t ADS1120::readADC()
+{
+    return this->readADC_Single();
 }
 
-byte * ADS1120::readADC_Array() {
-  digitalWrite(ADS1120_CS_PIN, LOW); // Take CS low
-  delayMicroseconds(1); // Minimum of td(CSSC)
-  
-  static byte dataarray[2];
-  for (int x = 0; x < 2 ; x++)
-  {
-    dataarray[x] = SPI.transfer(SPI_MASTER_DUMMY);
-  }
-  delayMicroseconds(1); // Minimum of td(CSSC)
-  digitalWrite(ADS1120_CS_PIN, HIGH);
-  return dataarray;
-}
+
 
 //Single Conversion read modes
-uint16_t ADS1120::readADC_Single() {
-  byte * data = readADC_SingleArray();
-  return convertToValue(data);
+uint16_t ADS1120::readADC_Single(uint8_t sleep)
+{
+    this->startADC_Single();
+    if(sleep)
+        sleep_cpu();
+    else
+        while(digitalRead(ADS1120_DRDY_PIN) == HIGH){}
+    return this->getADC_Single(); 
 }
 
-double ADS1120::readADC_SingleTemp() {
-  byte * data = readADC_SingleArray();
-  return convertToTemp(data);
+
+double ADS1120::readADC_SingleTemp(uint8_t sleep) 
+{
+    return this->convertToTemp(this->readADC_Single(sleep));
 }
 
-byte * ADS1120::readADC_SingleArray() {
+
+
+
+void ADS1120::startADC_Single(void) // trigger single shot conversion
+{
   digitalWrite(ADS1120_CS_PIN, LOW); // Take CS low
   delayMicroseconds(1); // Minimum of td(CSSC)
 
-  SPI.transfer(0x08);
-  while(digitalRead(ADS1120_DRDY_PIN) == HIGH)
-  {
-    //Wait to DRDY goes down
-    //Not a good thing
-    //Code could be stuck here
-    //Need a improve later
-  }
+  SPI.transfer(CMD_START_SYNC);
+  
+  delayMicroseconds(1); // Minimum of td(CSSC)
+  digitalWrite(ADS1120_CS_PIN, HIGH);
+  
+  // now we can sleep the MCU or do polling or whatever.
+}
 
-  static byte dataarray[2];
+
+
+uint16_t ADS1120::getADC_Single(void) // get result from single shot conversion
+{
+  digitalWrite(ADS1120_CS_PIN, LOW); // Take CS low
+  delayMicroseconds(1); // Minimum of td(CSSC)
+  
+  static byte data[2];
   for (int x = 0; x < 2 ; x++)
   {
-    dataarray[x] = SPI.transfer(SPI_MASTER_DUMMY);
+    data[x] = SPI.transfer(SPI_MASTER_DUMMY);
   }
   delayMicroseconds(1); // Minimum of td(CSSC)
   digitalWrite(ADS1120_CS_PIN, HIGH);
-  return dataarray;
+
+  return ((uint16_t) data[0])<<8 | (data[1]); //Moving MSB and LSB to 16 bit
 }
 
-uint16_t ADS1120::convertToValue(byte * data) {
-  return ((uint16_t)data[0])<<8 | (data[1]); //Moving MSB and LSB to 16 bit
+
+
+double ADS1120::convertToTemp(uint16_t data)
+{
+    uint16_t conversion = data >> 2;
+
+    // Negative numbers are represented in binary twos complement format
+    if(conversion >= 8192) 
+    {
+        conversion = (~(conversion-1)) ^ 0xC000;
+        return conversion * -0.03125;
+    }
+
+    return conversion * 0.03125;
 }
 
-double ADS1120::convertToTemp(byte * data) { 
-  // 14-bit result that is left-justified within the conversion result
-  uint16_t conversion = (((uint16_t)data[0])<<8 | (data[1])) >> 2;
-    
-  // Negative numbers are represented in binary twos complement format
-  if(conversion >= 8192) {
-    conversion = (~(conversion-1)) ^ 0xC000;
-    return conversion * -0.03125;
-  }
-  
-  return conversion * 0.03125;
-}
 
 void ADS1120::sendCommand(uint8_t command) {
   // Following Protocentral's code, not sure exactly what's going on here.

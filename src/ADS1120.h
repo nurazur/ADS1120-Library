@@ -54,12 +54,11 @@ class ADS1120 {
     void begin(uint8_t cs_pin, uint8_t drdy_pin);
     bool isDataReady(void);
     uint16_t readADC(void);
-    byte * readADC_Array(void);
-    uint16_t readADC_Single(void);
-    double readADC_SingleTemp(void);
-    byte * readADC_SingleArray(void);
-    uint16_t convertToValue(byte * data);
-    double convertToTemp(byte * data);
+    void startADC_Single(void); // trigger single shot conversion
+    uint16_t getADC_Single(void); // get result fro single shot conversion
+    uint16_t readADC_Single(uint8_t sleep=0);
+    double readADC_SingleTemp(uint8_t sleep=0);
+    double convertToTemp(uint16_t data);
     void sendCommand(uint8_t command);
     void reset(void);
     void startSync(void);
